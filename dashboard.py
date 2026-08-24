@@ -49,11 +49,40 @@ def main() -> None:
     if not (ROOT / "docker-compose.yaml").is_file():
         fail("docker-compose.yaml was not found next to dashboard.py.")
 
-    if not (ROOT / ".env").is_file():
-        fail(
-            ".env was not found. Copy .env.example to .env and configure the "
-            "required API keys and passwords before launching."
+    env_file = ROOT / ".env"
+    env_example = ROOT / ".env.example"
+
+    if not env_file.is_file():
+        if not env_example.is_file():
+            fail(
+                ".env was not found, and .env.example is also missing. "
+                "Restore the project configuration files and try again."
+            )
+
+        print("\nFirst-time setup detected.")
+        print("Creating .env automatically from .env.example...")
+        shutil.copy2(env_example, env_file)
+
+        print(
+            "\nYour .env file has been created successfully.\n"
+            "Before the dashboard can start, open .env and replace the example "
+            "values with your real configuration. At minimum, you will normally "
+            "need valid values for OPENAI_API_KEY and FRED_API_KEY, plus secure "
+            "passwords/secrets for the local services.\n"
+            f"Configuration file: {env_file}\n"
         )
+
+        try:
+            if sys.platform.startswith("win"):
+                subprocess.Popen(["notepad.exe", str(env_file)])
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", str(env_file)])
+            else:
+                subprocess.Popen(["xdg-open", str(env_file)])
+        except OSError:
+            pass
+
+        input("Edit and save .env, then press Enter here to continue...")
 
     if shutil.which("docker") is None:
         fail("Docker was not found. Install Docker Desktop and try again.")
