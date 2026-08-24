@@ -1,0 +1,104 @@
+#!/usr/bin/env python3
+"""
+One-click launcher for the Ultimate Macroeconomics Dashboard.
+
+Usage:
+    python dashboard.py
+
+The script starts the Docker Compose stack, waits until the Streamlit
+dashboard is healthy, and opens it in the default browser.
+"""
+
+from __future__ import annotations
+
+import shutil
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.request
+import webbrowser
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent
+URL = "http://localhost:8501"
+HEALTH_URL = f"{URL}/_stcore/health"
+POLL_SECONDS = 5
+
+
+def fail(message: str) -> None:
+    print(f"\nERROR: {message}")
+    input("\nPress Enter to close...")
+    raise SystemExit(1)
+
+
+def run_compose(*args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["docker", "compose", *args],
+        cwd=ROOT,
+        text=True,
+        check=False,
+    )
+
+
+def main() -> None:
+    print("=" * 60)
+    print(" Ultimate Macroeconomics Dashboard")
+    print("=" * 60)
+
+    if not (ROOT / "docker-compose.yaml").is_file():
+        fail("docker-compose.yaml was not found next to dashboard.py.")
+
+    if not (ROOT / ".env").is_file():
+        fail(
+            ".env was not found. Copy .env.example to .env and configure the "
+            "required API keys and passwords before launching."
+        )
+
+    if shutil.which("docker") is None:
+        fail("Docker was not found. Install Docker Desktop and try again.")
+
+    version = run_compose("version")
+    if version.returncode != 0:
+        fail("Docker Compose is not available. Ensure Docker Desktop is running.")
+
+    # If the dashboard is already healthy, simply bring it to the foreground.
+    try:
+        with urllib.request.urlopen(HEALTH_URL, timeout=2) as response:
+            if response.status == 200:
+                print("\nDashboard is already running.")
+                webbrowser.open(URL)
+                return
+    except (urllib.error.URLError, TimeoutError):
+        pass
+
+    print("\nStarting the dashboard stack...")
+    result = run_compose("up", "-d", "--build")
+    if result.returncode != 0:
+        fail("Docker Compose could not start the stack.")
+
+    print("\nServices are starting.")
+    print("The first launch can take a long time because images, models, and")
+    print("the initial datasets may need to be downloaded and processed.")
+    print("This window will open the dashboard automatically when it is ready.")
+    print("Press Ctrl+C if you only want to stop waiting; the Docker services")
+    print("will continue running in the background.\n")
+
+    while True:
+        try:
+            with urllib.request.urlopen(HEALTH_URL, timeout=3) as response:
+                if response.status == 200:
+                    print("\nDashboard is ready. Opening your browser...")
+                    webbrowser.open(URL)
+                    return
+        except (urllib.error.URLError, TimeoutError):
+            pass
+        print("Waiting for http://localhost:8501 ...", flush=True)
+        time.sleep(POLL_SECONDS)
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\nStopped waiting. The Docker services are still running.")
